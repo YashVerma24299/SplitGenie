@@ -13,16 +13,19 @@ import { Plus, Users, User } from "lucide-react";
 import { CreateGroupModal } from "./_components/create-group-modal";
 
 export default function ContactsPage() {
+  // State to control "Create Group" modal visibility
   const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
+  
+  // Next.js router & search params 
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // Fetch all contacts (users and groups) using a custom Convex hook
   const { data, isLoading } = useConvexQuery(api.contacts.getAllContacts);
 
   // Check for the createGroup parameter when the component mounts
   useEffect(() => {
     const createGroupParam = searchParams.get("createGroup");
-
     if (createGroupParam === "true") {
       // Open the modal
       setIsCreateGroupModalOpen(true);
@@ -36,6 +39,7 @@ export default function ContactsPage() {
     }
   }, [searchParams, router]);
 
+  // Show loader while data is being fetched
   if (isLoading) {
     return (
       <div className="container mx-auto py-12">
@@ -44,11 +48,12 @@ export default function ContactsPage() {
     );
   }
 
+  // Destructure users and groups from fetched data
   const { users, groups } = data || { users: [], groups: [] };
 
   return (
     <div className="container mx-auto py-6">
-        {/* contact + crete button */}
+      {/* Header section with title and "Create Group" button */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-4 justify-between mb-6">
         <h1 className="text-5xl gradient-title">Contacts</h1>
         <Button onClick={() => setIsCreateGroupModalOpen(true)}>
@@ -57,8 +62,9 @@ export default function ContactsPage() {
         </Button>
       </div>
 
+      {/* People + Group */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Individual Contacts */}
+        {/* Individual People/Contacts */}
         <div>
           <h2 className="text-xl font-bold mb-4 flex items-center">
             <User className="mr-2 h-5 w-5" />
@@ -78,6 +84,7 @@ export default function ContactsPage() {
                     <CardContent className="py-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
+                          {/* Image */}
                           <Avatar className="h-10 w-10">
                             <AvatarImage src={user.imageUrl} />
                             <AvatarFallback>
@@ -138,8 +145,10 @@ export default function ContactsPage() {
             </div>
           )}
         </div>
+
       </div>
 
+      {/* Create Group Modal */}
       <CreateGroupModal
         isOpen={isCreateGroupModalOpen}
         onClose={() => setIsCreateGroupModalOpen(false)}

@@ -1,5 +1,6 @@
-"use client";
+// Purpose: This allows the user to create a new group with a name, optional description, and multiple members.
 
+"use client";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -41,12 +42,12 @@ const groupSchema = z.object({
 });
 
 export function CreateGroupModal({ isOpen, onClose, onSuccess }) {
-  const [selectedMembers, setSelectedMembers] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [commandOpen, setCommandOpen] = useState(false);
+  const [selectedMembers, setSelectedMembers] = useState([]); //stores users added to the group.
+  const [searchQuery, setSearchQuery] = useState("");   //stores the search input for adding members.
+  const [commandOpen, setCommandOpen] = useState(false);    //controls the search popup.
 
-  const { data: currentUser } = useConvexQuery(api.users.getCurrentUser);
-  const createGroup = useConvexMutation(api.contacts.createGroup);
+  const { data: currentUser } = useConvexQuery(api.users.getCurrentUser);  //the logged-in user (always included in the group).
+  const createGroup = useConvexMutation(api.contacts.createGroup);   //mutation to create a group in the backend.
   const { data: searchResults, isLoading: isSearching } = useConvexQuery(
     api.users.searchUsers,
     { query: searchQuery }
@@ -65,6 +66,7 @@ export function CreateGroupModal({ isOpen, onClose, onSuccess }) {
     },
   });
 
+  // adds a user to the 'selectedMembers' array if not already added.
   const addMember = (user) => {
     if (!selectedMembers.some((m) => m.id === user.id)) {
       setSelectedMembers([...selectedMembers, user]);
@@ -72,6 +74,7 @@ export function CreateGroupModal({ isOpen, onClose, onSuccess }) {
     setCommandOpen(false);
   };
 
+  // removes a user from the array.
   const removeMember = (userId) => {
     setSelectedMembers(selectedMembers.filter((m) => m.id !== userId));
   };
