@@ -2,33 +2,42 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 
+// === Store or update a user in DB ===
+// Purpose → Save a logged-in user in DB (only once).
+// Steps:
+// 1. Get logged-in user identity from auth.
+// 2. Check if user already exists in users table by tokenIdentifier.
+// 3. If exists and name changed → update name.
+// 4. If new user → insert in DB.
+// 5. Return user _id.
 export const store = mutation({
   args: {},
   handler: async (ctx) => {
+    // Get current authenticated user identity from auth provider
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Called storeUser without authentication present");
     }
 
-    // Check if we've already stored this identity before.
-    // Note: If you don't want to define an index right away, you can use
-    // ctx.db.query("users")
-    //  .filter(q => q.eq(q.field("tokenIdentifier"), identity.tokenIdentifier))
-    //  .unique();
+    // Check if user already exists using tokenIdentifier index
     const user = await ctx.db
       .query("users")
       .withIndex("by_token", (q) =>
         q.eq("tokenIdentifier", identity.tokenIdentifier),
       )
       .unique();
+
+    // If user exists:
     if (user !== null) {
-      // If we've seen this identity before but the name has changed, patch the value.
+      // Update name if it has changed
       if (user.name !== identity.name) {
         await ctx.db.patch(user._id, { name: identity.name });
       }
+      // Return existing user id
       return user._id;
     }
-    // If it's a new identity, create a new `User`.
+    
+    // Else create a new user entry
     return await ctx.db.insert("users", {
       name: identity.name ?? "Anonymous",
       tokenIdentifier: identity.tokenIdentifier,
@@ -38,7 +47,13 @@ export const store = mutation({
   },
 });
 
-// Get current user
+// === Get the currently logged-in user from DB ===
+// Purpose → Return full user record of the currently logged-in user.
+// Steps:
+// 1. Get identity of authenticated user.
+// 2. Find user in DB using tokenIdentifier.
+// 3. If not found → throw error.
+// 4. Return user document.
 export const getCurrentUser = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -46,6 +61,7 @@ export const getCurrentUser = query({
       throw new Error("Not authenticated");
     }
 
+    // Find user using token index
     const user = await ctx.db
       .query("users")
       .withIndex("by_token", (q) =>
@@ -61,33 +77,42 @@ export const getCurrentUser = query({
   },
 });
 
-// Search users by name or email (for adding participants)
+// === Search users by name or email (for sharing / adding participants) ===
+// Purpose → Find users by name or email to show possible members/participants.
+// Steps:
+// 1. Get current user (to exclude him from results).
+// 2. If query text length < 2 → return empty result.
+// 3. Search by name (search_name index).
+// 4. Search by email (search_email index).
+// 5. Merge both results & remove duplicates.
+// 6. Remove current user from list.
+// 7. Return selected fields (id, name, email, image).
 export const searchUsers = query({
   args: {
-    query: v.string(),
+    query: v.string(), // search keyword
   },
   handler: async (ctx, args) => {
-    // Use centralized getCurrentUser function
+    // Get current user to exclude him from search results
     const currentUser = await ctx.runQuery(internal.users.getCurrentUser);
 
-    // Don't search if query is too short
+    // Return empty list if search query is less than 2 characters
     if (args.query.length < 2) {
       return [];
     }
 
-    // Search by name using search index
+    // Search users by name (using search index)
     const nameResults = await ctx.db
       .query("users")
       .withSearchIndex("search_name", (q) => q.search("name", args.query))
       .collect();
 
-    // Search by email using search index
+    // Search users by email
     const emailResults = await ctx.db
       .query("users")
       .withSearchIndex("search_email", (q) => q.search("email", args.query))
       .collect();
 
-    // Combine results (removing duplicates)
+    // Combine both result arrays but remove duplicates
     const users = [
       ...nameResults,
       ...emailResults.filter(
