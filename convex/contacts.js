@@ -2,12 +2,23 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 
+/* ===================== GET ALL CONTACTS (1–1 + GROUPS) ===================== */
+// Purpose: To fetch all the people and groups that the current user interacts with.
+// Steps:
+  // 1. Get current logged-in user.
+  // 2. Get personal expenses you paid.
+  // 3. Get personal expenses others paid but you are involved.
+  // 4. Collect unique user IDs from these expenses → your contacts.
+  // 5. Fetch user info for each contact.
+  // 6. Get groups where you are a member.
+  // 7. Sort users and groups alphabetically.
+// Returns: { users: [...], groups: [...] }
 export const getAllContacts = query({
   handler: async (ctx) => {
-    // Use the centralized getCurrentUser instead of duplicating auth logic
+    // Get current logged in user from central API
     const currentUser = await ctx.runQuery(internal.users.getCurrentUser);
 
-    /* ── personal expenses where YOU are the payer ─────────────────────── */
+    /* --- PERSONAL EXPENSES WHERE YOU ARE THE PAYER --- */
     const expensesYouPaid = await ctx.db
       .query("expenses")
       .withIndex("by_user_and_group", (q) =>
@@ -15,7 +26,7 @@ export const getAllContacts = query({
       )
       .collect();
 
-    /* ── personal expenses where YOU are **not** the payer ─────────────── */
+    /* --- PERSONAL EXPENSES WHERE SOMEONE ELSE PAID, but YOU are in splits --- */
     const expensesNotPaidByYou = (
       await ctx.db
         .query("expenses")
@@ -29,7 +40,7 @@ export const getAllContacts = query({
 
     const personalExpenses = [...expensesYouPaid, ...expensesNotPaidByYou];
 
-    /* ── extract unique counterpart IDs ─────────────────────────────────── */
+    /* --- Collect all unique user IDs from these expenses (contacts) --- */
     const contactIds = new Set();
     personalExpenses.forEach((exp) => {
       if (exp.paidByUserId !== currentUser._id)
@@ -56,7 +67,7 @@ export const getAllContacts = query({
       })
     );
 
-    /* ── groups where current user is a member ─────────────────────────── */
+    /* --- Get all groups where current user is a member --- */
     const userGroups = (await ctx.db.query("groups").collect())
       .filter((g) => g.members.some((m) => m.userId === currentUser._id))
       .map((g) => ({
@@ -67,7 +78,7 @@ export const getAllContacts = query({
         type: "group",
       }));
 
-    /* sort alphabetically */
+    /* --- Sort contacts and groups alphabetically --- */
     contactUsers.sort((a, b) => a?.name.localeCompare(b?.name));
     userGroups.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -75,6 +86,18 @@ export const getAllContacts = query({
   },
 });
 
+
+/* ============================ CREATE GROUP ============================ */
+// Purpose: make a new group for splitting expenses
+// Steps:
+// 1. Get current logged-in user.
+// 2. Check that group name is not empty.
+// 3. Combine members from UI + creator.
+// 4. Validate each user exists in DB.
+// 5. Insert new group with:
+      // name, description
+      // createdBy → current user
+      // members → role: admin (creator) / member
 export const createGroup = mutation({
   args: {
     name: v.string(),
@@ -82,20 +105,22 @@ export const createGroup = mutation({
     members: v.array(v.id("users")),
   },
   handler: async (ctx, args) => {
-    // Use the centralized getCurrentUser instead of duplicating auth logic
+    // Get logged-in user
     const currentUser = await ctx.runQuery(internal.users.getCurrentUser);
 
     if (!args.name.trim()) throw new Error("Group name cannot be empty");
 
+    // Add current user (creator) to member list
     const uniqueMembers = new Set(args.members);
     uniqueMembers.add(currentUser._id); // ensure creator
 
-    // Validate that all member users exist
+    // Validate that all members exist in DB
     for (const id of uniqueMembers) {
       if (!(await ctx.db.get(id)))
         throw new Error(`User with ID ${id} not found`);
     }
 
+    // Insert group with member roles and createdBy
     return await ctx.db.insert("groups", {
       name: args.name.trim(),
       description: args.description?.trim() ?? "",
